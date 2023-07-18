@@ -61,6 +61,7 @@ Description
 #include "CombustionModel.H"
 
 #ifdef GPUSolver_
+#include "dfTestEqn.H"
 #include "dfUEqn.H"
 #include "dfYEqn.H"
 #include "dfRhoEqn.H"

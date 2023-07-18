@@ -43,6 +43,7 @@ settingPath = CanteraTorchProperties.subDict("AmgxSettings").lookupOrDefault("UE
     dfUEqn UEqn_GPU(dfDataBase, "dDDI", settingPath);
     dfYEqn YEqn_GPU(dfDataBase, "dDDI", settingPath, inertIndex);
     dfEEqn EEqn_GPU(dfDataBase, "dDDI", settingPath);
+    dfTestEqn TestEqn_GPU(dfDataBase, "dDDI", settingPath);
 
     double *ueqn_internalCoeffs_init, *ueqn_boundaryCoeffs_init, *boundary_pressure_init, *boundary_velocity_init,
         *boundary_nuEff_init, *boundary_rho_init, *ueqn_laplac_internalCoeffs_init, *ueqn_laplac_boundaryCoeffs_init, *boundary_phi_init;

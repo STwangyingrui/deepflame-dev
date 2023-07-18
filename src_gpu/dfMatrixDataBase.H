@@ -76,6 +76,15 @@ struct dfMatrixDataBase
     // - csr_diag_index
     int *h_A_csr_diag_index=nullptr, *d_A_csr_diag_index=nullptr;
 
+    // add by wyr
+    int *d_lowerAddr = nullptr;
+    int *d_upperAddr = nullptr;
+    double *d_lower = nullptr;
+    double *d_upper = nullptr;
+    double *d_diag = nullptr;
+    double *d_try_weight = nullptr;
+    double *d_try_phi = nullptr;
+
     // - the pre-permutated and post-permutated interpolation weight list
     std::vector<double> h_weight_vec_init, h_weight_vec;
     // - the pre-permutated and post-permutated flux (phi) list
@@ -263,6 +272,7 @@ struct dfMatrixDataBase
         csr_value_vec_bytes = (num_cells + num_faces) * 3 * sizeof(double);
 
         /************************construct mesh variables****************************/
+
         /**
          * 1. h_csr_row_index & h_csr_diag_index
         */
@@ -506,6 +516,15 @@ struct dfMatrixDataBase
         checkCudaErrors(cudaMalloc((void**)&d_A_csr_diag_index, cell_index_bytes));
         total_bytes += (csr_row_index_bytes + csr_col_index_bytes + cell_index_bytes);
 
+        // add by wyr
+        checkCudaErrors(cudaMalloc((void**)&d_lowerAddr, num_surfaces * sizeof(int)));
+        checkCudaErrors(cudaMalloc((void**)&d_upperAddr, num_surfaces * sizeof(int)));
+        checkCudaErrors(cudaMalloc((void**)&d_lower, num_surfaces * sizeof(double)));
+        checkCudaErrors(cudaMalloc((void**)&d_upper, num_surfaces * sizeof(double)));
+        checkCudaErrors(cudaMalloc((void**)&d_diag, cell_bytes));
+        checkCudaErrors(cudaMalloc((void**)&d_try_weight, num_surfaces * sizeof(double)));
+        checkCudaErrors(cudaMalloc((void**)&d_try_phi, num_surfaces * sizeof(double)));
+
         //d_Y.resize(num_species);
         d_rhoD_vector.resize(num_species);
         d_boundary_Y_vector.resize(num_species);
@@ -609,6 +628,11 @@ struct dfMatrixDataBase
         checkCudaErrors(cudaMalloc((void**)&d_boundary_hDiffCorrFlux, 3 * boundary_face_bytes));
 
         fprintf(stderr, "Total bytes malloc on GPU: %.2fMB\n", total_bytes * 1.0 / 1024 / 1024);
+
+        // add by wyr
+        checkCudaErrors(cudaMemcpyAsync(d_lowerAddr, owner, num_surfaces * sizeof(int), cudaMemcpyHostToDevice, stream));
+        checkCudaErrors(cudaMemcpyAsync(d_upperAddr, neighbour, num_surfaces * sizeof(int), cudaMemcpyHostToDevice, stream));
+        checkCudaErrors(cudaMemcpyAsync(d_try_weight, weight, num_surfaces * sizeof(double), cudaMemcpyHostToDevice, stream));
 
         checkCudaErrors(cudaMemcpyAsync(d_A_csr_row_index, h_A_csr_row_index, csr_row_index_bytes, cudaMemcpyHostToDevice, stream));
         checkCudaErrors(cudaMemcpyAsync(d_A_csr_col_index, h_A_csr_col_index, csr_col_index_bytes, cudaMemcpyHostToDevice, stream));
