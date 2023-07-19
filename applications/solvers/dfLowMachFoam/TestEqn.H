@@ -32,5 +32,55 @@
 
     // check result
     TestEqn_GPU.checkResult(h_lower.data(), h_upper.data(), h_diag.data(), false);
+
+    // clear result
+    TestEqn_GPU.clear();
+
+    // run another implementation of fvm_div
+
+    // --prepare data
+    std::vector<int> upperNum(num_cells, 0);
+    std::vector<int> lowerNum(num_cells, 0);
+    std::vector<int> lowerPermListInit(num_surfaces);
+
+    int *upperOffset = (int*)calloc(num_cells + 1, sizeof(int));
+    int *lowerOffset = (int*)calloc(num_cells + 1, sizeof(int));
+
+    forAll(owner, faceI){
+        upperNum[owner[faceI]] ++;
+        lowerNum[neighbour[faceI]] ++;
+    }
+    std::partial_sum(upperNum.begin(), upperNum.end(), 
+        upperOffset+1);
+    std::partial_sum(lowerNum.begin(), lowerNum.end(), 
+        lowerOffset+1);
+
+    std::iota(lowerPermListInit.begin(), lowerPermListInit.end(), 0);
+
+    std::multimap<int,int> permutation;
+    for (int i = 0; i < num_surfaces; ++i){
+        permutation.insert(std::make_pair(neighbour[i], lowerPermListInit[i]));
+    }
+    std::vector<std::pair<int, int>> permPair(permutation.begin(), permutation.end());
+    std::sort(permPair.begin(), permPair.end(), []
+    (const std::pair<int, int>& pair1, const std::pair<int, int>& pair2){
+        if (pair1.first != pair2.first) {
+            return pair1.first < pair2.first;
+        } else {
+            return pair1.second < pair2.second;
+        }
+    });
+    // - form permedIndex list
+    std::vector<int> lowerPermList;
+    std::transform(permPair.begin(), permPair.end(), std::back_inserter(lowerPermList), []
+        (const std::pair<int, int>& pair) {
+        return pair.second;
+    }); 
+
+    // --run fvm_div
+    TestEqn_GPU.fvm_div_2(upperOffset, lowerOffset, lowerPermList.data());
+
+    TestEqn_GPU.checkResult(h_lower.data(), h_upper.data(), h_diag.data(), false);
+    
 #endif
 

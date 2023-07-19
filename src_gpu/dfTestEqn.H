@@ -24,4 +24,6 @@ public:
     void initializeTimeStep(const double *phi);
     void fvm_div();
     void checkResult(const double *h_lower, const double *h_upper, const double *h_diag, bool print);
+    void clear();
+    void fvm_div_2(int *upperOffset, int *lowerOffset, int *lowerPermList);
 };

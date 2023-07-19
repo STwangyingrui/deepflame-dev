@@ -75,6 +75,47 @@ __global__ void test_fvm_div_internal(int num_cells, int num_surfaces,
     atomicAdd(&(diag[u]), (w - 1) * f);
 }
 
+__global__ void test2_fvm_div_internal(int num_cells,
+                                      const int *lowerOffset, const int *upperOffset, const int *lowerPermList,
+                                      const double *A_lower_input, double *A_lower_output,
+                                      const double *A_upper_input, double *A_upper_output,
+                                      const double *A_diag_input, double *A_diag_output,
+                                      const double *weight, const double *phi)
+{
+    int index = blockDim.x * blockIdx.x + threadIdx.x;
+    if (index >= num_cells)
+        return;
+
+    int low_start = lowerOffset[index];
+    int upp_start = upperOffset[index];
+    int low_num = lowerOffset[index + 1] - low_start;
+    int upp_num = upperOffset[index + 1] - upp_start;
+    double diag = 0;
+
+    // lower
+    for (int i = 0; i < low_num; ++i)
+    {
+        int low_index = lowerPermList[low_start + i];
+        double w = weight[low_index];
+        double f = phi[low_index];
+        A_lower_output[low_index] = A_lower_output[low_index] - w * f;
+        // diag
+        diag += (w - 1) * f;
+    }
+    // upper
+    for (int i = 0; i < upp_num; ++i)
+    {
+        int upp_index = upp_start + i;
+        double w = weight[upp_index];
+        double f = phi[upp_index];
+        A_upper_output[upp_index] = A_upper_input[upp_index] + (1 - w) * f;
+        // diag
+        diag += w * f;
+    }
+    // diag
+    A_diag_output[index] = A_diag_input[index] + diag;
+}
+
 // constructor
 dfTestEqn::dfTestEqn(dfMatrixDataBase &dataBase, const std::string &modeStr, const std::string &cfgFile)
     : dataBase_(dataBase)
@@ -145,6 +186,51 @@ void dfTestEqn::fvm_div()
     checkCudaErrors(cudaEventElapsedTime(&time_elapsed,start,stop));
     fprintf(stderr, "try fvm_div_internal 执行时间：%f(ms)\n",time_elapsed);
 }
+
+void dfTestEqn::clear()
+{
+    checkCudaErrors(cudaMemset(dataBase_.d_lower, 0, num_surfaces * sizeof(double)));
+    checkCudaErrors(cudaMemset(dataBase_.d_upper, 0, num_surfaces * sizeof(double)));
+    checkCudaErrors(cudaMemset(dataBase_.d_diag, 0, num_cells * sizeof(double)));
+}
+
+void dfTestEqn::fvm_div_2(int *upperOffset, int *lowerOffset, int *lowerPermList)
+{
+    // prepare data
+    int *d_lowerOffset, *d_upperOffset, *d_lowerPermList;
+    checkCudaErrors(cudaMalloc((void **)&d_lowerOffset, (num_cells + 1) * sizeof(int)));
+    checkCudaErrors(cudaMalloc((void **)&d_upperOffset, (num_cells + 1) * sizeof(int)));
+    checkCudaErrors(cudaMalloc((void **)&d_lowerPermList, num_surfaces * sizeof(int)));
+    checkCudaErrors(cudaMemcpy(d_lowerOffset, lowerOffset, (num_cells + 1) * sizeof(int), cudaMemcpyHostToDevice));
+    checkCudaErrors(cudaMemcpy(d_upperOffset, upperOffset, (num_cells + 1) * sizeof(int), cudaMemcpyHostToDevice));
+    checkCudaErrors(cudaMemcpy(d_lowerPermList, lowerPermList, num_surfaces * sizeof(int), cudaMemcpyHostToDevice));
+
+    size_t threads_per_block = 1024;
+    size_t blocks_per_grid = 1;
+
+    // warmup
+    fprintf(stderr, "warmup...\n");
+    blocks_per_grid = (num_cells + threads_per_block - 1) / threads_per_block;
+    warmup<<<blocks_per_grid, threads_per_block, 0, stream>>>(num_cells);
+
+    //使用event计算时间
+    float time_elapsed=0;
+    cudaEvent_t start,stop;
+    checkCudaErrors(cudaEventCreate(&start));
+    checkCudaErrors(cudaEventCreate(&stop));
+
+    checkCudaErrors(cudaEventRecord(start,0));
+    blocks_per_grid = (num_cells + threads_per_block - 1) / threads_per_block;
+    test2_fvm_div_internal<<<blocks_per_grid, threads_per_block, 0, stream>>>(num_cells,
+            d_lowerOffset, d_upperOffset, d_lowerPermList,
+            dataBase_.d_lower, dataBase_.d_lower, dataBase_.d_upper, dataBase_.d_upper,
+            dataBase_.d_diag, dataBase_.d_diag, dataBase_.d_try_weight, dataBase_.d_try_phi);
+    checkCudaErrors(cudaEventRecord(stop,0));
+    checkCudaErrors(cudaEventSynchronize(start));
+    checkCudaErrors(cudaEventSynchronize(stop));
+    checkCudaErrors(cudaEventElapsedTime(&time_elapsed,start,stop));
+    fprintf(stderr, "try2 fvm_div_internal 执行时间：%f(ms)\n",time_elapsed);
+} 
 
 void dfTestEqn::checkResult(const double *lower, const double *upper, const double *diag, bool print)
 {
