@@ -22,14 +22,10 @@ License
     along with OpenFOAM.  If not, see <http://www.gnu.org/licenses/>.
 
 Application
-    rhoPimpleFoam
+    unittest2
 
 Description
-    Transient solver for turbulent flow of compressible fluids for HVAC and
-    similar applications, with optional mesh motion and mesh topology changes.
-
-    Uses the flexible PIMPLE (PISO-SIMPLE) solution for time-resolved and
-    pseudo-transient simulations.
+    1. test different implementation of fvc::grad
 
 \*---------------------------------------------------------------------------*/
 
@@ -62,16 +58,10 @@ Description
 
 //#undef GPUSolver_
 
-#ifdef GPUSolver_
 #include "dfTestEqn.H"
-#include "dfUEqn.H"
-#include "dfYEqn.H"
-#include "dfRhoEqn.H"
-#include "dfEEqn.H"
 #include <cuda_runtime.h>
 #include <thread>
 #include "upwind.H"
-#endif
 
 int main(int argc, char *argv[])
 {
@@ -100,9 +90,7 @@ int main(int argc, char *argv[])
         #include "setInitialDeltaT.H"
     }
 
-    #ifdef GPUSolver_
     #include "createdfSolver.H"
-    #endif
     // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
     {
         #include "readDyMControls.H"

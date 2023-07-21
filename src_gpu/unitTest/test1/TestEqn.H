@@ -1,5 +1,4 @@
 // validate fvm::div(phi, U)
-#ifdef GPUSolver_
     // firstly, run CPUSolver
     tmp<fvVectorMatrix> tmpTestEqn
     (
@@ -77,10 +76,42 @@
         return pair.second;
     }); 
 
+    // - construct lower & upper mtxIndex
+    std::vector<int> lowCSRIndex_init, lowCSRIndex, uppCSRIndex, diagCSRIndex;
+
+    for (int i = 0; i < num_cells; ++i) {
+        int numUppPerRow = upperOffset[i + 1] - upperOffset[i];
+        int numLowPerRow = lowerOffset[i + 1] - lowerOffset[i];
+        int numNZBefore = upperOffset[i] + lowerOffset[i] + i; // add diag
+        // upper
+        int uppIndex;
+        for (int j = 0; j < numUppPerRow; ++j) {
+            uppIndex = numNZBefore + numLowPerRow + 1 + j; // 1 means diag
+            uppCSRIndex.push_back(uppIndex);
+        }
+        // lower
+        int lowIndex;
+        for (int j = 0; j < numLowPerRow; ++j) {
+            lowIndex = numNZBefore + j;
+            lowCSRIndex_init.push_back(lowIndex);
+        }
+        // diag
+        int diagIndex = numNZBefore + numLowPerRow;
+        diagCSRIndex.push_back(diagIndex);
+    }
+    lowCSRIndex.resize(num_surfaces);
+    // apply lower permuedIndex to lowCSRIndex
+    for (int i = 0; i < num_surfaces; ++i) {
+        lowCSRIndex[lowerPermList[i]] = lowCSRIndex_init[i];
+    }
+
     // --run fvm_div
     TestEqn_GPU.fvm_div_2(upperOffset, lowerOffset, lowerPermList.data());
 
+    // ldu2csr
+    TestEqn_GPU.ldu2csr(lowCSRIndex.data(), uppCSRIndex.data(), diagCSRIndex.data());
+    // check csr result
+    TestEqn_GPU.checkLDUResult();
+
     TestEqn_GPU.checkResult(h_lower.data(), h_upper.data(), h_diag.data(), false);
-    
-#endif
 

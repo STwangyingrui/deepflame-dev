@@ -15,6 +15,7 @@ private:
     // Matrix variables
     double *d_A_csr = nullptr;
     double *d_b = nullptr;
+    double *d_A_csr_ref = nullptr;
 
 public:
     dfTestEqn();
@@ -26,4 +27,6 @@ public:
     void checkResult(const double *h_lower, const double *h_upper, const double *h_diag, bool print);
     void clear();
     void fvm_div_2(int *upperOffset, int *lowerOffset, int *lowerPermList);
+    void ldu2csr(int *lowCSRIndex, int *uppCSRIndex, int *diagCSRIndex);
+    void checkLDUResult();
 };

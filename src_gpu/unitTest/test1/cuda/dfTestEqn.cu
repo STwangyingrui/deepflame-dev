@@ -54,6 +54,33 @@ __global__ void ldu_to_csr(int num_cells, int num_surfaces,
     }
 }
 
+__global__ void ldu_to_csr_offDiag(int num_cells, int num_surfaces,
+        const int *lowCSRIndex, const int *uppCSRIndex,
+        const double *lower, const double *upper,
+        double *A_csr)
+{
+    int index = blockDim.x * blockIdx.x + threadIdx.x;
+    if (index >= num_surfaces)
+        return;
+
+    int uppIndex = uppCSRIndex[index];
+    int lowIndex = lowCSRIndex[index];
+    A_csr[uppIndex] = upper[index];
+    A_csr[lowIndex] = lower[index];
+}
+
+__global__ void ldu_to_csr_Diag(int num_cells,
+        const int *diagCSRIndex, const double *diag,
+        double *A_csr)
+{
+    int index = blockDim.x * blockIdx.x + threadIdx.x;
+    if (index >= num_cells)
+        return;
+
+    int diagIndex = diagCSRIndex[index];
+    A_csr[diagIndex] = diag[index];
+}
+
 __global__ void test_fvm_div_internal(int num_cells, int num_surfaces,
                                  const int *lower_index, const int *upper_index,
                                  const double *weight, const double *phi,
@@ -116,6 +143,59 @@ __global__ void test2_fvm_div_internal(int num_cells,
     A_diag_output[index] = A_diag_input[index] + diag;
 }
 
+__global__ void fvm_div_internal_orig(int num_cells, int num_faces,
+                                const int *csr_row_index, const int *csr_diag_index,
+                                const double *weight, const double *phi_init, const int *permedIndex,
+                                const double *A_csr_input, const double *b_input, double *A_csr_output, double *b_output)
+{
+    int index = blockDim.x * blockIdx.x + threadIdx.x;
+    if (index >= num_cells)
+        return;
+
+    // A_csr has one more element in each row: itself
+    int row_index = csr_row_index[index];
+    int next_row_index = csr_row_index[index + 1];
+    int diag_index = csr_diag_index[index];
+    int neighbor_offset = csr_row_index[index] - index;
+    int csr_dim = num_cells + num_faces;
+
+    double div_diag = 0;
+    for (int i = row_index; i < next_row_index; i++)
+    {
+        int inner_index = i - row_index;
+        // lower
+        if (inner_index < diag_index)
+        {
+            int neighbor_index = neighbor_offset + inner_index;
+            double w = weight[neighbor_index];
+            int permute_index = permedIndex[neighbor_index];
+            double f = phi_init[permute_index];
+            A_csr_output[csr_dim * 0 + i] = A_csr_input[csr_dim * 0 + i] + (-w) * f;
+            A_csr_output[csr_dim * 1 + i] = A_csr_input[csr_dim * 1 + i] + (-w) * f;
+            A_csr_output[csr_dim * 2 + i] = A_csr_input[csr_dim * 2 + i] + (-w) * f;
+            // lower neighbors contribute to sum of -1
+            div_diag += (w - 1) * f;
+        }
+        // upper
+        if (inner_index > diag_index)
+        {
+            // upper, index - 1, consider of diag
+            int neighbor_index = neighbor_offset + inner_index - 1;
+            double w = weight[neighbor_index];
+            int permute_index = permedIndex[neighbor_index];
+            double f = phi_init[permute_index];
+            A_csr_output[csr_dim * 0 + i] = A_csr_input[csr_dim * 0 + i] + (1 - w) * f;
+            A_csr_output[csr_dim * 1 + i] = A_csr_input[csr_dim * 1 + i] + (1 - w) * f;
+            A_csr_output[csr_dim * 2 + i] = A_csr_input[csr_dim * 2 + i] + (1 - w) * f;
+            // upper neighbors contribute to sum of 1
+            div_diag += w * f;
+        }
+    }
+    A_csr_output[csr_dim * 0 + row_index + diag_index] = A_csr_input[csr_dim * 0 + row_index + diag_index] + div_diag; // diag
+    A_csr_output[csr_dim * 1 + row_index + diag_index] = A_csr_input[csr_dim * 1 + row_index + diag_index] + div_diag; // diag
+    A_csr_output[csr_dim * 2 + row_index + diag_index] = A_csr_input[csr_dim * 2 + row_index + diag_index] + div_diag; // diag
+}
+
 // constructor
 dfTestEqn::dfTestEqn(dfMatrixDataBase &dataBase, const std::string &modeStr, const std::string &cfgFile)
     : dataBase_(dataBase)
@@ -134,7 +214,9 @@ dfTestEqn::dfTestEqn(dfMatrixDataBase &dataBase, const std::string &modeStr, con
     d_A_csr_col_index = dataBase_.d_A_csr_col_index;
 
     checkCudaErrors(cudaMalloc((void **)&d_A_csr, csr_value_vec_bytes));
+    checkCudaErrors(cudaMalloc((void **)&d_A_csr_ref, csr_value_vec_bytes));
     checkCudaErrors(cudaMalloc((void **)&d_b, cell_vec_bytes));
+    checkCudaErrors(cudaMemsetAsync(d_A_csr_ref, 0, csr_value_vec_bytes, stream));
 }
 
 void dfTestEqn::initializeTimeStep(const double *phi)
@@ -148,6 +230,9 @@ void dfTestEqn::initializeTimeStep(const double *phi)
 
     memcpy(dataBase_.h_phi_init, phi, num_surfaces * sizeof(double));
     checkCudaErrors(cudaMemcpyAsync(dataBase_.d_try_phi, dataBase_.h_phi_init, num_surfaces * sizeof(double), cudaMemcpyHostToDevice, stream));
+
+    checkCudaErrors(cudaMemcpyAsync(dataBase_.d_phi_init, dataBase_.h_phi_init, num_surfaces * sizeof(double), cudaMemcpyHostToDevice, stream));
+    checkCudaErrors(cudaMemcpyAsync(dataBase_.d_phi_init + num_surfaces, dataBase_.d_phi_init, num_surfaces * sizeof(double), cudaMemcpyDeviceToDevice, stream));
 }
 
 void dfTestEqn::fvm_div()
@@ -232,6 +317,42 @@ void dfTestEqn::fvm_div_2(int *upperOffset, int *lowerOffset, int *lowerPermList
     fprintf(stderr, "try2 fvm_div_internal 执行时间：%f(ms)\n",time_elapsed);
 } 
 
+void dfTestEqn::ldu2csr(int *lowCSRIndex, int *uppCSRIndex, int *diagCSRIndex)
+{
+    // prepare data
+    int *d_lowCSRIndex, *d_uppCSRIndex, *d_diagCSRIndex;
+    checkCudaErrors(cudaMalloc((void **)&d_lowCSRIndex, num_surfaces * sizeof(int)));
+    checkCudaErrors(cudaMalloc((void **)&d_uppCSRIndex, num_surfaces * sizeof(int)));
+    checkCudaErrors(cudaMalloc((void **)&d_diagCSRIndex, num_cells * sizeof(int)));
+    checkCudaErrors(cudaMemcpy(d_lowCSRIndex, lowCSRIndex, num_surfaces * sizeof(int), cudaMemcpyHostToDevice));
+    checkCudaErrors(cudaMemcpy(d_uppCSRIndex, uppCSRIndex, num_surfaces * sizeof(int), cudaMemcpyHostToDevice));
+    checkCudaErrors(cudaMemcpy(d_diagCSRIndex, diagCSRIndex, num_cells * sizeof(int), cudaMemcpyHostToDevice));
+
+    //使用event计算时间
+    float time_elapsed=0;
+    cudaEvent_t start,stop;
+    checkCudaErrors(cudaEventCreate(&start));
+    checkCudaErrors(cudaEventCreate(&stop));
+
+    checkCudaErrors(cudaEventRecord(start,0));
+    // offdiag
+    size_t threads_per_block = 1024;
+    size_t blocks_per_grid = (num_surfaces + threads_per_block - 1) / threads_per_block;
+    ldu_to_csr_offDiag<<<blocks_per_grid, threads_per_block, 0, stream>>>(num_cells, num_surfaces, 
+            d_lowCSRIndex, d_uppCSRIndex, dataBase_.d_lower, dataBase_.d_upper, d_A_csr);
+
+    // diag
+    blocks_per_grid = (num_cells + threads_per_block - 1) / threads_per_block;
+    ldu_to_csr_Diag<<<blocks_per_grid, threads_per_block, 0, stream>>>(num_cells, 
+            d_diagCSRIndex, dataBase_.d_diag, d_A_csr);
+
+    checkCudaErrors(cudaEventRecord(stop,0));
+    checkCudaErrors(cudaEventSynchronize(start));
+    checkCudaErrors(cudaEventSynchronize(stop));
+    checkCudaErrors(cudaEventElapsedTime(&time_elapsed,start,stop));
+    fprintf(stderr, "try ldu_to_csr 执行时间：%f(ms)\n",time_elapsed);
+}
+
 void dfTestEqn::checkResult(const double *lower, const double *upper, const double *diag, bool print)
 {
     std::vector<double> h_lower(num_surfaces);
@@ -254,6 +375,23 @@ void dfTestEqn::checkResult(const double *lower, const double *upper, const doub
     checkVectorEqual(num_surfaces, lower, h_lower.data(), 1e-5);
     checkVectorEqual(num_surfaces, upper, h_upper.data(), 1e-5);
     checkVectorEqual(num_cells, diag, h_diag.data(), 1e-5);
+}
+
+void dfTestEqn::checkLDUResult()
+{
+    size_t threads_per_block = 1024;
+    size_t blocks_per_grid = (num_cells + threads_per_block - 1) / threads_per_block;
+
+    fvm_div_internal_orig<<<blocks_per_grid, threads_per_block, 0, stream>>>(num_cells, num_faces,
+                                                                        d_A_csr_row_index, d_A_csr_diag_index,
+                                                                        dataBase_.d_weight, dataBase_.d_phi_init, dataBase_.d_permedIndex, d_A_csr_ref, d_b, d_A_csr_ref, d_b);
+
+    checkCudaErrors(cudaStreamSynchronize(stream));
+    double *h_A_csr_ref = new double[num_cells + num_faces];
+    double *h_A_csr = new double[num_cells + num_faces];
+    checkCudaErrors(cudaMemcpy(h_A_csr_ref, d_A_csr_ref, (num_cells + num_faces) * sizeof(double), cudaMemcpyDeviceToHost));
+    checkCudaErrors(cudaMemcpy(h_A_csr, d_A_csr, (num_cells + num_faces) * sizeof(double), cudaMemcpyDeviceToHost));
+    checkVectorEqual(num_cells + num_faces, h_A_csr_ref, h_A_csr, 1e-5);
 }
 
 dfTestEqn::~dfTestEqn()
