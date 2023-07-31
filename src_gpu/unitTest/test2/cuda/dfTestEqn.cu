@@ -239,15 +239,25 @@ void dfTestEqn::fvc_grad_old(double *boundary_pressure_init)
 
     blocks_per_grid = (num_surfaces + threads_per_block - 1) / threads_per_block;
     blocks_per_grid = (num_cells + threads_per_block - 1) / threads_per_block;
-    fvc_grad_internal_orig<<<blocks_per_grid, threads_per_block, 0, stream>>>(num_cells,
-                                                                              d_A_csr_row_index, d_A_csr_col_index, d_A_csr_diag_index,
-                                                                              dataBase_.d_face_vector, dataBase_.d_weight, dataBase_.d_pressure, d_b_ref, d_b_ref);
-    
+
     // 使用event计算时间
     float time_elapsed = 0;
     cudaEvent_t start, stop;
     checkCudaErrors(cudaEventCreate(&start));
     checkCudaErrors(cudaEventCreate(&stop));
+
+    checkCudaErrors(cudaEventRecord(start, 0));
+
+    fvc_grad_internal_orig<<<blocks_per_grid, threads_per_block, 0, stream>>>(num_cells,
+                                                                              d_A_csr_row_index, d_A_csr_col_index, d_A_csr_diag_index,
+                                                                              dataBase_.d_face_vector, dataBase_.d_weight, dataBase_.d_pressure, d_b_ref, d_b_ref);
+    
+    checkCudaErrors(cudaEventRecord(stop, 0));
+    checkCudaErrors(cudaEventSynchronize(start));
+    checkCudaErrors(cudaEventSynchronize(stop));
+    checkCudaErrors(cudaEventElapsedTime(&time_elapsed, start, stop));
+    fprintf(stderr, "try fvc_grad_internal_old 执行时间：%f(ms)\n", time_elapsed);
+    
 
     checkCudaErrors(cudaEventRecord(start, 0));
     blocks_per_grid = (num_boundary_cells + threads_per_block - 1) / threads_per_block;
@@ -259,7 +269,7 @@ void dfTestEqn::fvc_grad_old(double *boundary_pressure_init)
     checkCudaErrors(cudaEventSynchronize(start));
     checkCudaErrors(cudaEventSynchronize(stop));
     checkCudaErrors(cudaEventElapsedTime(&time_elapsed, start, stop));
-    fprintf(stderr, "try fvc_grad_internal_old 执行时间：%f(ms)\n", time_elapsed);
+    fprintf(stderr, "try fvc_grad_boundary_old 执行时间：%f(ms)\n", time_elapsed);
 }
 
 void dfTestEqn::fvc_grad_new(const double **boundary_pressure_per_patch, const double **boundary_face_vector_per_patch, 
@@ -272,10 +282,6 @@ void dfTestEqn::fvc_grad_new(const double **boundary_pressure_per_patch, const d
     double **d_boundary_pressure_per_patch = new double*[patch_size];
     double **d_boundary_face_vector_per_patch = new double*[patch_size];
     int **d_face_cells_per_patch = new int*[patch_size];
-    printf("location 0\n");
-    double *a = nullptr;
-    checkCudaErrors(cudaMalloc((void **)&a, num_surfaces * sizeof(double)));
-    printf("location 1\n");
     for(int i = 0; i < patch_size; i ++) {
         checkCudaErrors(cudaMalloc((void **)&d_boundary_pressure_per_patch[i], num_face_per_patch[i] * sizeof(double)));
         checkCudaErrors(cudaMalloc((void **)&d_boundary_face_vector_per_patch[i], 3 * num_face_per_patch[i] * sizeof(double)));
@@ -284,7 +290,6 @@ void dfTestEqn::fvc_grad_new(const double **boundary_pressure_per_patch, const d
         checkCudaErrors(cudaMemcpy(d_boundary_face_vector_per_patch[i], boundary_face_vector_per_patch[i], 3 * num_face_per_patch[i] * sizeof(double), cudaMemcpyHostToDevice));
         checkCudaErrors(cudaMemcpy(d_face_cells_per_patch[i], face_cells_per_patch[i], num_face_per_patch[i] * sizeof(int), cudaMemcpyHostToDevice));
     }
-    printf("location 2\n");
     // combine patch
     double *d_boundary_pressure, *d_boundary_face_vector;
     int *d_face_cell_combine;
@@ -303,17 +308,27 @@ void dfTestEqn::fvc_grad_new(const double **boundary_pressure_per_patch, const d
     blocks_per_grid = (num_cells + threads_per_block - 1) / threads_per_block;
     warmup<<<blocks_per_grid, threads_per_block, 0, stream>>>(num_cells);
 
-    blocks_per_grid = (num_surfaces + threads_per_block - 1) / threads_per_block;
-    fvc_grad_internal_atom<<<blocks_per_grid, threads_per_block, 0, stream>>>(num_cells, num_surfaces,
-                                                                              dataBase_.d_lowerAddr, dataBase_.d_upperAddr,
-                                                                              d_faceVector_half, d_weight_half, dataBase_.d_pressure, d_b);
-
     // 使用event计算时间
     float time_elapsed = 0;
     cudaEvent_t start, stop;
     checkCudaErrors(cudaEventCreate(&start));
     checkCudaErrors(cudaEventCreate(&stop));
 
+    checkCudaErrors(cudaEventRecord(start, 0));
+
+    blocks_per_grid = (num_surfaces + threads_per_block - 1) / threads_per_block;
+    fvc_grad_internal_atom<<<blocks_per_grid, threads_per_block, 0, stream>>>(num_cells, num_surfaces,
+                                                                              dataBase_.d_lowerAddr, dataBase_.d_upperAddr,
+                                                                              d_faceVector_half, d_weight_half, dataBase_.d_pressure, d_b);
+
+    checkCudaErrors(cudaEventRecord(stop, 0));
+    checkCudaErrors(cudaEventSynchronize(start));
+    checkCudaErrors(cudaEventSynchronize(stop));
+    checkCudaErrors(cudaEventElapsedTime(&time_elapsed, start, stop));
+    fprintf(stderr, "try2 fvc_grad_internal_new 执行时间：%f(ms)\n", time_elapsed);
+
+
+    time_elapsed = 0;
     checkCudaErrors(cudaEventRecord(start, 0));
     
     // per patch solution
@@ -334,7 +349,7 @@ void dfTestEqn::fvc_grad_new(const double **boundary_pressure_per_patch, const d
     checkCudaErrors(cudaEventSynchronize(start));
     checkCudaErrors(cudaEventSynchronize(stop));
     checkCudaErrors(cudaEventElapsedTime(&time_elapsed, start, stop));
-    fprintf(stderr, "try2 fvc_grad_internal_new 执行时间：%f(ms)\n", time_elapsed);
+    fprintf(stderr, "try2 fvc_grad_boundary_new 执行时间：%f(ms)\n", time_elapsed);
 }
 
 void dfTestEqn::checkResult(bool print)

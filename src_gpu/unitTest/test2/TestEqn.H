@@ -25,7 +25,7 @@
     const double **boundary_face_vector_per_patch = new const double*[U.boundaryField().size()];
 
     double *boundary_pressure = new double[offset];
-    double *boundary_face_vector = new double[offset];
+    double *boundary_face_vector = new double[offset * 3];
     int *face_cell_combine = new int[offset];
 
     offset = 0;
