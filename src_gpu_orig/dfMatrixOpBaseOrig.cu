@@ -377,6 +377,94 @@ __global__ void fvc_grad_scalar_boundary(int num_cells, int num_boundary_cells, 
     b_output[cell_index * 3 + 2] = b_input[cell_index * 3 + 2] + grad_bz / vol;
 }
 
+__global__ void fvc_div_vector_internal(int num_cells,
+                                        const int *csr_row_index, const int *csr_col_index, const int *csr_diag_index,
+                                        const double *sf, const double *vf, const double *tlambdas, const double *volume,
+                                        const double sign, const double *b_input, double *b_output)
+{
+    int index = blockDim.x * blockIdx.x + threadIdx.x;
+    if (index >= num_cells)
+        return;
+    
+    // A_csr has one more element in each row: itself
+    int row_index = csr_row_index[index];
+    int row_elements = csr_row_index[index + 1] - row_index;
+    int diag_index = csr_diag_index[index];
+    int neighbor_offset = csr_row_index[index] - index;
+
+    double own_vf_x = vf[index * 3 + 0];
+    double own_vf_y = vf[index * 3 + 1];
+    double own_vf_z = vf[index * 3 + 2];
+    double sum = 0;
+    // lower
+    for (int i = 0; i < diag_index; i++)
+    {
+        int neighbor_index = neighbor_offset + i;
+        int neighbor_cell_id = csr_col_index[row_index + i];
+        double w = tlambdas[neighbor_index];
+        double sf_x = sf[neighbor_index * 3 + 0];
+        double sf_y = sf[neighbor_index * 3 + 1];
+        double sf_z = sf[neighbor_index * 3 + 2];
+        double neighbor_vf_x = vf[neighbor_cell_id * 3 + 0];
+        double neighbor_vf_y = vf[neighbor_cell_id * 3 + 1];
+        double neighbor_vf_z = vf[neighbor_cell_id * 3 + 2];
+        double face_x = (1 - w) * own_vf_x + w * neighbor_vf_x;
+        double face_y = (1 - w) * own_vf_y + w * neighbor_vf_y;
+        double face_z = (1 - w) * own_vf_z + w * neighbor_vf_z;
+        sum -= sf_x * face_x + sf_y * face_y + sf_z * face_z;
+    }
+    // upper
+    for (int i = diag_index + 1; i < row_elements; i++)
+    {
+        int neighbor_index = neighbor_offset + i - 1;
+        int neighbor_cell_id = csr_col_index[row_index + i];
+        double w = tlambdas[neighbor_index];
+        double sf_x = sf[neighbor_index * 3 + 0];
+        double sf_y = sf[neighbor_index * 3 + 1];
+        double sf_z = sf[neighbor_index * 3 + 2];
+        double neighbor_vf_x = vf[neighbor_cell_id * 3 + 0];
+        double neighbor_vf_y = vf[neighbor_cell_id * 3 + 1];
+        double neighbor_vf_z = vf[neighbor_cell_id * 3 + 2];
+        double face_x = w * own_vf_x + (1 - w) * neighbor_vf_x;
+        double face_y = w * own_vf_y + (1 - w) * neighbor_vf_y;
+        double face_z = w * own_vf_z + (1 - w) * neighbor_vf_z;
+        sum += sf_x * face_x + sf_y * face_y + sf_z * face_z;
+    }
+    double vol = volume[index];
+    b_output[index] = b_input[index] + sum / vol * sign;
+}
+
+__global__ void fvc_div_vector_boundary(int num_boundary_cells, const int *bouPermedIndex,
+                                             const int *boundary_cell_offset, const int *boundary_cell_id,
+                                             const double *boundary_sf, const double *boundary_vf, const double *volume,
+                                             const double sign, const double *b_input, double *b_output)
+{
+    int index = blockDim.x * blockIdx.x + threadIdx.x;
+    if (index >= num_boundary_cells)
+        return;
+
+    int cell_offset = boundary_cell_offset[index];
+    int next_cell_offset = boundary_cell_offset[index + 1];
+    int cell_index = boundary_cell_id[cell_offset];
+
+    double sum = 0;
+    for (int i = cell_offset; i < next_cell_offset; i++)
+    {
+        int p = bouPermedIndex[i];
+        double sf_x = boundary_sf[i * 3 + 0];
+        double sf_y = boundary_sf[i * 3 + 1];
+        double sf_z = boundary_sf[i * 3 + 2];
+        double face_x = boundary_vf[p * 3 + 0];
+        double face_y = boundary_vf[p * 3 + 1];
+        double face_z = boundary_vf[p * 3 + 2];
+
+        // if not coupled
+        sum += (sf_x * face_x + sf_y * face_y + sf_z * face_z);
+    }
+    double vol = volume[cell_index];
+    b_output[cell_index] = b_input[cell_index] + sum / vol * sign;
+}
+
 
 void fvc_grad_vector_orig(cudaStream_t stream, dfMatrixDataBaseOrig* dataBaseOrig, dfMatrixDataBase& dataBase, double *d_grad, 
         double *d_grad_boundary_init, double *d_grad_boundary)
@@ -397,7 +485,7 @@ void fvc_grad_vector_orig(cudaStream_t stream, dfMatrixDataBaseOrig* dataBaseOri
     checkCudaErrors(cudaEventSynchronize(start));
     checkCudaErrors(cudaEventSynchronize(stop));
     checkCudaErrors(cudaEventElapsedTime(&time_elapsed, start, stop));
-    printf("\nfvc_grad_vector_orig internal 执行时间：%f(ms)\n", time_elapsed);
+    printf("fvc_grad_vector_orig internal 执行时间：%f(ms)\n", time_elapsed);
     
     
     checkCudaErrors(cudaEventRecord(start, 0));
@@ -443,7 +531,7 @@ void fvc_grad_scalar_orig(cudaStream_t stream, dfMatrixDataBaseOrig* dataBaseOri
     checkCudaErrors(cudaEventSynchronize(start));
     checkCudaErrors(cudaEventSynchronize(stop));
     checkCudaErrors(cudaEventElapsedTime(&time_elapsed, start, stop));
-    printf("\nfvc_grad_scalar_orig internal 执行时间：%f(ms)\n", time_elapsed);
+    printf("fvc_grad_scalar_orig internal 执行时间：%f(ms)\n", time_elapsed);
 
     checkCudaErrors(cudaEventRecord(start, 0));
 
@@ -457,4 +545,39 @@ void fvc_grad_scalar_orig(cudaStream_t stream, dfMatrixDataBaseOrig* dataBaseOri
     checkCudaErrors(cudaEventSynchronize(stop));
     checkCudaErrors(cudaEventElapsedTime(&time_elapsed, start, stop));
     printf("fvc_grad_scalar_orig boundary 执行时间：%f(ms)\n", time_elapsed);
+}
+
+void fvc_div_vector_orig(cudaStream_t stream, dfMatrixDataBaseOrig* dataBaseOrig, dfMatrixDataBase& dataBase, double *output)
+{
+    float time_elapsed = 0;
+    cudaEvent_t start, stop;
+    checkCudaErrors(cudaEventCreate(&start));
+    checkCudaErrors(cudaEventCreate(&stop));
+    checkCudaErrors(cudaEventRecord(start, 0));
+
+    size_t threads_per_block = 512;
+    size_t blocks_per_grid = (dataBase.num_cells + threads_per_block - 1) / threads_per_block;
+    fvc_div_vector_internal<<<blocks_per_grid, threads_per_block, 0, stream>>>(dataBase.num_cells,
+            dataBaseOrig->d_A_csr_row_index, dataBaseOrig->d_A_csr_col_index, dataBaseOrig->d_A_csr_diag_index,
+            dataBaseOrig->d_face_vector, dataBase.d_u, dataBaseOrig->d_weight, dataBaseOrig->d_volume, 
+            1., output, output);
+
+    checkCudaErrors(cudaEventRecord(stop, 0));
+    checkCudaErrors(cudaEventSynchronize(start));
+    checkCudaErrors(cudaEventSynchronize(stop));
+    checkCudaErrors(cudaEventElapsedTime(&time_elapsed, start, stop));
+    printf("fvc_div_vector_orig internal 执行时间：%f(ms)\n", time_elapsed);
+
+    checkCudaErrors(cudaEventRecord(start, 0));
+
+    blocks_per_grid = (dataBaseOrig->num_boundary_cells + threads_per_block - 1) / threads_per_block;
+    fvc_div_vector_boundary<<<blocks_per_grid, threads_per_block, 0, stream>>>(dataBaseOrig->num_boundary_cells,
+            dataBaseOrig->d_bouPermedIndex, dataBaseOrig->d_boundary_cell_offset, dataBaseOrig->d_boundary_cell_id,
+            dataBaseOrig->d_boundary_face_vector, dataBase.d_boundary_u, dataBaseOrig->d_volume, 1., output, output);
+    
+    checkCudaErrors(cudaEventRecord(stop, 0));
+    checkCudaErrors(cudaEventSynchronize(start));
+    checkCudaErrors(cudaEventSynchronize(stop));
+    checkCudaErrors(cudaEventElapsedTime(&time_elapsed, start, stop));
+    printf("fvc_div_vector_orig boundary 执行时间：%f(ms)\n", time_elapsed);
 }

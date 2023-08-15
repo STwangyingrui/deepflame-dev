@@ -44,7 +44,7 @@ void fvc_ddt_scalar(cudaStream_t stream, int num_cells, double rDeltaT,
         double *output);
 
 
-void fvc_grad_vector(cudaStream_t stream, int num_cells, int num_surfaces, 
+void fvc_grad_vector(cudaStream_t stream, int num_cells, int num_surfaces, int num_boundary_surfaces, 
         const int *lowerAddr, const int *upperAddr, 
         const double *weight, const double *Sf, const double *vf, double *output, // end for internal
         int num_patches, const int *patch_size, const int *patch_type,

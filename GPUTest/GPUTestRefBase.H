@@ -61,3 +61,31 @@ void test_fvc_grad_scalar_orig(dfMatrixDataBase& dfDataBase, Foam::fvMesh& mesh,
     checkCudaErrors(cudaMemcpy(h_fvc_ouput_vector.data(), d_fvc_ouput_vector, dfDataBase.cell_value_vec_bytes, cudaMemcpyDeviceToHost));
     checkVectorEqual(dfDataBase.num_cells * 3, &fvc_ouput_vector[0][0], h_fvc_ouput_vector.data(), 1e-14, printFlag);
 }
+
+void test_fvc_div_vector_orig(dfMatrixDataBase& dfDataBase, Foam::fvMesh& mesh, volVectorField& U, initType type,
+        dfMatrixDataBaseOrig* dfDataBaseOrig)
+{
+    if (type == initType::randomInit) {
+        U.oldTime();
+        randomInitField<volVectorField>(U);
+    }
+
+    // run CPU
+    volScalarField fvc_ouput_scalar = fvc::div(U);
+
+    // prepare for run GPU
+    // prepare U on GPU
+    uploadRegisteredField<volVectorField>(dfDataBase, U, "u");
+    
+    double *d_fvc_ouput_scalar = nullptr;
+    checkCudaErrors(cudaMalloc((void**)&d_fvc_ouput_scalar, dfDataBase.cell_value_bytes));
+    checkCudaErrors(cudaMemset(d_fvc_ouput_scalar, 0, dfDataBase.cell_value_bytes));
+
+    fvc_div_vector_orig(dfDataBase.stream, dfDataBaseOrig, dfDataBase, d_fvc_ouput_scalar);
+
+    // compare result
+    bool printFlag = false;
+    std::vector<double> h_fvc_ouput_scalar(dfDataBase.num_cells);
+    checkCudaErrors(cudaMemcpy(h_fvc_ouput_scalar.data(), d_fvc_ouput_scalar, dfDataBase.cell_value_bytes, cudaMemcpyDeviceToHost));
+    checkVectorEqual(dfDataBase.num_cells, &fvc_ouput_scalar[0], h_fvc_ouput_scalar.data(), 1e-14, printFlag);
+}

@@ -192,7 +192,7 @@ __global__ void fvc_ddt_scalar_kernel(int num_cells, double rDeltaT,
     output[index] += rDeltaT * (rho[index] * vf[index] - rho_old[index] * vf_old[index]);
 }
 
-__global__ void fvc_grad_vector_internal(int num_surfaces, 
+__global__ void fvc_grad_vector_internal(int num_cells, int num_surfaces, 
         const int *lower_index, const int *upper_index, const double *face_vector,
         const double *weight, const double *field_vector, 
         double *output)
@@ -224,33 +224,40 @@ __global__ void fvc_grad_vector_internal(int num_surfaces,
     double grad_zz = Sfz * ssfz;
 
     // owner
-    atomicAdd(&(output[owner * 9 + 0]), grad_xx);
-    atomicAdd(&(output[owner * 9 + 1]), grad_xy);
-    atomicAdd(&(output[owner * 9 + 2]), grad_xz);
-    atomicAdd(&(output[owner * 9 + 3]), grad_yx);
-    atomicAdd(&(output[owner * 9 + 4]), grad_yy);
-    atomicAdd(&(output[owner * 9 + 5]), grad_yz);
-    atomicAdd(&(output[owner * 9 + 6]), grad_zx);
-    atomicAdd(&(output[owner * 9 + 7]), grad_zy);
-    atomicAdd(&(output[owner * 9 + 8]), grad_zz);
+    atomicAdd(&(output[num_cells * 0 + owner]), grad_xx);
+    atomicAdd(&(output[num_cells * 1 + owner]), grad_xy);
+    atomicAdd(&(output[num_cells * 2 + owner]), grad_xz);
+    atomicAdd(&(output[num_cells * 3 + owner]), grad_yx);
+    atomicAdd(&(output[num_cells * 4 + owner]), grad_yy);
+    atomicAdd(&(output[num_cells * 5 + owner]), grad_yz);
+    atomicAdd(&(output[num_cells * 6 + owner]), grad_zx);
+    atomicAdd(&(output[num_cells * 7 + owner]), grad_zy);
+    atomicAdd(&(output[num_cells * 8 + owner]), grad_zz);
 
     // neighbour
-    atomicAdd(&(output[neighbor * 9 + 0]), -grad_xx);
-    atomicAdd(&(output[neighbor * 9 + 1]), -grad_xy);
-    atomicAdd(&(output[neighbor * 9 + 2]), -grad_xz);
-    atomicAdd(&(output[neighbor * 9 + 3]), -grad_yx);
-    atomicAdd(&(output[neighbor * 9 + 4]), -grad_yy);
-    atomicAdd(&(output[neighbor * 9 + 5]), -grad_yz);
-    atomicAdd(&(output[neighbor * 9 + 6]), -grad_zx);
-    atomicAdd(&(output[neighbor * 9 + 7]), -grad_zy);
-    atomicAdd(&(output[neighbor * 9 + 8]), -grad_zz);
+    atomicAdd(&(output[num_cells * 0 + neighbor]), -grad_xx);
+    atomicAdd(&(output[num_cells * 1 + neighbor]), -grad_xy);
+    atomicAdd(&(output[num_cells * 2 + neighbor]), -grad_xz);
+    atomicAdd(&(output[num_cells * 3 + neighbor]), -grad_yx);
+    atomicAdd(&(output[num_cells * 4 + neighbor]), -grad_yy);
+    atomicAdd(&(output[num_cells * 5 + neighbor]), -grad_yz);
+    atomicAdd(&(output[num_cells * 6 + neighbor]), -grad_zx);
+    atomicAdd(&(output[num_cells * 7 + neighbor]), -grad_zy);
+    atomicAdd(&(output[num_cells * 8 + neighbor]), -grad_zz);
+
+    // if (index == 0)
+    // {
+    //     printf("output[0] = (%.5e, %.5e, %.5e, %.5e, %.5e, %.5e, %.5e, %.5e, %.5e)\n", output[num_cells * 0], output[num_cells * 1], output[num_cells * 2], 
+    //             output[num_cells * 3], output[num_cells * 4], output[num_cells * 5], output[num_cells * 6], output[num_cells * 7], output[num_cells * 8]);
+    // }
+    
 }
 
 // update boundary of interpolation field
 // calculate the grad field
 // TODO: this function is implemented for uncoupled boundary conditions
 //       so it should use the more specific func name
-__global__ void fvc_grad_vector_boundary(int num, int offset, const int *face2Cells,
+__global__ void fvc_grad_vector_boundary(int num_cells, int num, int offset, const int *face2Cells,
         const double *boundary_face_vector, const double *boundary_field_vector, double *output)
 {
     int index = blockDim.x * blockIdx.x + threadIdx.x;
@@ -279,15 +286,15 @@ __global__ void fvc_grad_vector_boundary(int num, int offset, const int *face2Ce
     double grad_zy = bouSfz * boussfy;
     double grad_zz = bouSfz * boussfz;
 
-    atomicAdd(&(output[cellIndex * 9 + 0]), grad_xx);
-    atomicAdd(&(output[cellIndex * 9 + 1]), grad_xy);
-    atomicAdd(&(output[cellIndex * 9 + 2]), grad_xz);
-    atomicAdd(&(output[cellIndex * 9 + 3]), grad_yx);
-    atomicAdd(&(output[cellIndex * 9 + 4]), grad_yy);
-    atomicAdd(&(output[cellIndex * 9 + 5]), grad_yz);
-    atomicAdd(&(output[cellIndex * 9 + 6]), grad_zx);
-    atomicAdd(&(output[cellIndex * 9 + 7]), grad_zy);
-    atomicAdd(&(output[cellIndex * 9 + 8]), grad_zz);
+    atomicAdd(&(output[num_cells * 0 + cellIndex]), grad_xx);
+    atomicAdd(&(output[num_cells * 1 + cellIndex]), grad_xy);
+    atomicAdd(&(output[num_cells * 2 + cellIndex]), grad_xz);
+    atomicAdd(&(output[num_cells * 3 + cellIndex]), grad_yx);
+    atomicAdd(&(output[num_cells * 4 + cellIndex]), grad_yy);
+    atomicAdd(&(output[num_cells * 5 + cellIndex]), grad_yz);
+    atomicAdd(&(output[num_cells * 6 + cellIndex]), grad_zx);
+    atomicAdd(&(output[num_cells * 7 + cellIndex]), grad_zy);
+    atomicAdd(&(output[num_cells * 8 + cellIndex]), grad_zz);
 }
 
 __global__ void fvc_grad_scalar_internal(int num_cells, int num_surfaces,
@@ -372,15 +379,30 @@ __global__ void divide_cell_volume_tsr(int num_cells, const double* volume, doub
         return;
     
     double vol = volume[index];
-    output[index * 9 + 0] = output[index * 9 + 0] / vol;
-    output[index * 9 + 1] = output[index * 9 + 1] / vol;
-    output[index * 9 + 2] = output[index * 9 + 2] / vol;
-    output[index * 9 + 3] = output[index * 9 + 3] / vol;
-    output[index * 9 + 4] = output[index * 9 + 4] / vol;
-    output[index * 9 + 5] = output[index * 9 + 5] / vol;
-    output[index * 9 + 6] = output[index * 9 + 6] / vol;
-    output[index * 9 + 7] = output[index * 9 + 7] / vol;
-    output[index * 9 + 8] = output[index * 9 + 8] / vol;
+    // output[index * 9 + 0] = output[index * 9 + 0] / vol;
+    // output[index * 9 + 1] = output[index * 9 + 1] / vol;
+    // output[index * 9 + 2] = output[index * 9 + 2] / vol;
+    // output[index * 9 + 3] = output[index * 9 + 3] / vol;
+    // output[index * 9 + 4] = output[index * 9 + 4] / vol;
+    // output[index * 9 + 5] = output[index * 9 + 5] / vol;
+    // output[index * 9 + 6] = output[index * 9 + 6] / vol;
+    // output[index * 9 + 7] = output[index * 9 + 7] / vol;
+    // output[index * 9 + 8] = output[index * 9 + 8] / vol;
+    output[num_cells * 0 + index] = output[num_cells * 0 + index] / vol;
+    output[num_cells * 1 + index] = output[num_cells * 1 + index] / vol;
+    output[num_cells * 2 + index] = output[num_cells * 2 + index] / vol;
+    output[num_cells * 3 + index] = output[num_cells * 3 + index] / vol;
+    output[num_cells * 4 + index] = output[num_cells * 4 + index] / vol;
+    output[num_cells * 5 + index] = output[num_cells * 5 + index] / vol;
+    output[num_cells * 6 + index] = output[num_cells * 6 + index] / vol;
+    output[num_cells * 7 + index] = output[num_cells * 7 + index] / vol;
+    output[num_cells * 8 + index] = output[num_cells * 8 + index] / vol;
+
+    // if (index == 0)
+    // {
+    //     printf("output[0] = (%.5e, %.5e, %.5e, %.5e, %.5e, %.5e, %.5e, %.5e, %.5e)\n", output[num_cells * 0], output[num_cells * 1], output[num_cells * 2], 
+    //             output[num_cells * 3], output[num_cells * 4], output[num_cells * 5], output[num_cells * 6], output[num_cells * 7], output[num_cells * 8]);
+    // }
 }
 
 __global__ void divide_cell_volume_vec(int num_cells, const double* volume, double *output)
@@ -407,7 +429,8 @@ __global__ void divide_cell_volume_scalar(int num_cells, const double* volume, d
     output[index] = output[index] / vol;
 }
 
-__global__ void fvc_grad_vector_correctBC_zeroGradient(int num, int offset, const int *face2Cells, 
+__global__ void fvc_grad_vector_correctBC_zeroGradient(int num_cells, int num_boundary_surfaces, 
+        int num, int offset, const int *face2Cells, 
         const double *internal_grad, const double *vf, const double *boundary_sf,
         const double *boundary_mag_sf, double *boundary_grad)
 {
@@ -419,15 +442,15 @@ __global__ void fvc_grad_vector_correctBC_zeroGradient(int num, int offset, cons
 
     int cellIndex = face2Cells[start_index];
 
-    double grad_xx = internal_grad[cellIndex * 9 + 0];
-    double grad_xy = internal_grad[cellIndex * 9 + 1];
-    double grad_xz = internal_grad[cellIndex * 9 + 2];
-    double grad_yx = internal_grad[cellIndex * 9 + 3];
-    double grad_yy = internal_grad[cellIndex * 9 + 4];
-    double grad_yz = internal_grad[cellIndex * 9 + 5];
-    double grad_zx = internal_grad[cellIndex * 9 + 6];
-    double grad_zy = internal_grad[cellIndex * 9 + 7];
-    double grad_zz = internal_grad[cellIndex * 9 + 8];
+    double grad_xx = internal_grad[num_cells * 0 + cellIndex];
+    double grad_xy = internal_grad[num_cells * 1 + cellIndex];
+    double grad_xz = internal_grad[num_cells * 2 + cellIndex];
+    double grad_yx = internal_grad[num_cells * 3 + cellIndex];
+    double grad_yy = internal_grad[num_cells * 4 + cellIndex];
+    double grad_yz = internal_grad[num_cells * 5 + cellIndex];
+    double grad_zx = internal_grad[num_cells * 6 + cellIndex];
+    double grad_zy = internal_grad[num_cells * 7 + cellIndex];
+    double grad_zz = internal_grad[num_cells * 8 + cellIndex];
 
     double vfx = vf[cellIndex * 3 + 0];
     double vfy = vf[cellIndex * 3 + 1];
@@ -441,15 +464,15 @@ __global__ void fvc_grad_vector_correctBC_zeroGradient(int num, int offset, cons
     double grad_correction_y = - (n_x * grad_xy + n_y * grad_yy + n_z * grad_zy);
     double grad_correction_z = - (n_x * grad_xz + n_y * grad_yz + n_z * grad_zz);
 
-    boundary_grad[start_index * 9 + 0] = grad_xx + n_x * grad_correction_x;
-    boundary_grad[start_index * 9 + 1] = grad_xy + n_x * grad_correction_y;
-    boundary_grad[start_index * 9 + 2] = grad_xz + n_x * grad_correction_z;
-    boundary_grad[start_index * 9 + 3] = grad_yx + n_y * grad_correction_x;
-    boundary_grad[start_index * 9 + 4] = grad_yy + n_y * grad_correction_y;
-    boundary_grad[start_index * 9 + 5] = grad_yz + n_y * grad_correction_z;
-    boundary_grad[start_index * 9 + 6] = grad_zx + n_z * grad_correction_x;
-    boundary_grad[start_index * 9 + 7] = grad_zy + n_z * grad_correction_y;
-    boundary_grad[start_index * 9 + 8] = grad_zz + n_z * grad_correction_z;
+    boundary_grad[num_boundary_surfaces * 0 + start_index] = grad_xx + n_x * grad_correction_x;
+    boundary_grad[num_boundary_surfaces * 1 + start_index] = grad_xy + n_x * grad_correction_y;
+    boundary_grad[num_boundary_surfaces * 2 + start_index] = grad_xz + n_x * grad_correction_z;
+    boundary_grad[num_boundary_surfaces * 3 + start_index] = grad_yx + n_y * grad_correction_x;
+    boundary_grad[num_boundary_surfaces * 4 + start_index] = grad_yy + n_y * grad_correction_y;
+    boundary_grad[num_boundary_surfaces * 5 + start_index] = grad_yz + n_y * grad_correction_z;
+    boundary_grad[num_boundary_surfaces * 6 + start_index] = grad_zx + n_z * grad_correction_x;
+    boundary_grad[num_boundary_surfaces * 7 + start_index] = grad_zy + n_z * grad_correction_y;
+    boundary_grad[num_boundary_surfaces * 8 + start_index] = grad_zz + n_z * grad_correction_z;
 }
 
 __global__ void fvc_grad_vector_correctBC_fixedValue(int num, int offset, const int *face2Cells, 
@@ -726,7 +749,7 @@ void fvc_ddt_scalar(cudaStream_t stream, int num_cells, double rDeltaT,
             rDeltaT, rho, rho_old, vf, vf_old, output);
 }
 
-void fvc_grad_vector(cudaStream_t stream, int num_cells, int num_surfaces, 
+void fvc_grad_vector(cudaStream_t stream, int num_cells, int num_surfaces, int num_boundary_surfaces, 
         const int *lowerAddr, const int *upperAddr, 
         const double *weight, const double *Sf, const double *vf, double *output, // end for internal
         int num_patches, const int *patch_size, const int *patch_type,
@@ -744,7 +767,7 @@ void fvc_grad_vector(cudaStream_t stream, int num_cells, int num_surfaces,
     
     size_t threads_per_block = 1024;
     size_t blocks_per_grid = (num_surfaces + threads_per_block - 1) / threads_per_block;
-    fvc_grad_vector_internal<<<blocks_per_grid, threads_per_block, 0, stream>>>(num_surfaces, lowerAddr, upperAddr,
+    fvc_grad_vector_internal<<<blocks_per_grid, threads_per_block, 0, stream>>>(num_cells, num_surfaces, lowerAddr, upperAddr,
             Sf, weight, vf, output);
     
     // checkCudaErrors(cudaStreamSynchronize(stream));
@@ -752,7 +775,7 @@ void fvc_grad_vector(cudaStream_t stream, int num_cells, int num_surfaces,
     checkCudaErrors(cudaEventSynchronize(start));
     checkCudaErrors(cudaEventSynchronize(stop));
     checkCudaErrors(cudaEventElapsedTime(&time_elapsed, start, stop));
-    printf("\nfvc_grad_vector_new internal 执行时间：%f(ms)\n", time_elapsed);
+    printf("fvc_grad_vector_new internal 执行时间：%f(ms)\n", time_elapsed);
 
     // checkCudaErrors(cudaStreamSynchronize(stream));
     checkCudaErrors(cudaEventRecord(start, 0));
@@ -765,7 +788,7 @@ void fvc_grad_vector(cudaStream_t stream, int num_cells, int num_surfaces,
         if (patch_type[i] == boundaryConditions::zeroGradient
                 || patch_type[i] == boundaryConditions::fixedValue) {
             // TODO: just vector version now
-            fvc_grad_vector_boundary<<<blocks_per_grid, threads_per_block, 0, stream>>>(patch_size[i], offset, boundary_cell_face,
+            fvc_grad_vector_boundary<<<blocks_per_grid, threads_per_block, 0, stream>>>(num_cells, patch_size[i], offset, boundary_cell_face,
                     boundary_Sf, boundary_vf, output);
         } else if (0) {
             // xxx
@@ -784,7 +807,7 @@ void fvc_grad_vector(cudaStream_t stream, int num_cells, int num_surfaces,
     // checkCudaErrors(cudaStreamSynchronize(stream));
     checkCudaErrors(cudaEventRecord(start, 0));
 
-    threads_per_block = 512;
+    threads_per_block = 1024;
     blocks_per_grid = (num_cells + threads_per_block - 1) / threads_per_block;
     divide_cell_volume_tsr<<<blocks_per_grid, threads_per_block, 0, stream>>>(num_cells, volume, output);
 
@@ -806,8 +829,8 @@ void fvc_grad_vector(cudaStream_t stream, int num_cells, int num_surfaces,
         // TODO: just basic patch type now
         if (patch_type[i] == boundaryConditions::zeroGradient) {
             // TODO: just vector version now
-            fvc_grad_vector_correctBC_zeroGradient<<<blocks_per_grid, threads_per_block, 0, stream>>>(patch_size[i], offset, boundary_cell_face,
-                    output, boundary_vf, boundary_Sf, boundary_mag_Sf, boundary_output);
+            fvc_grad_vector_correctBC_zeroGradient<<<blocks_per_grid, threads_per_block, 0, stream>>>(num_cells, num_boundary_surfaces, 
+                    patch_size[i], offset, boundary_cell_face, output, boundary_vf, boundary_Sf, boundary_mag_Sf, boundary_output);
         } else if (patch_type[i] == boundaryConditions::fixedValue) {
             fvc_grad_vector_correctBC_fixedValue<<<blocks_per_grid, threads_per_block, 0, stream>>>(patch_size[i], offset, boundary_cell_face,
                     output, boundary_vf, boundary_Sf, boundary_mag_Sf, boundary_output, boundary_deltaCoeffs, boundary_vf);
@@ -852,9 +875,24 @@ void fvc_div_cell_vector(cudaStream_t stream, int num_cells, int num_surfaces,
         const int *boundary_cell_face, const double *boundary_vf, const double *boundary_Sf,
         const double *volume)
 {
+    float time_elapsed = 0;
+    cudaEvent_t start, stop;
+    checkCudaErrors(cudaEventCreate(&start));
+    checkCudaErrors(cudaEventCreate(&stop));
+    checkCudaErrors(cudaEventRecord(start, 0));
+
     size_t threads_per_block = 1024;
     size_t blocks_per_grid = (num_surfaces + threads_per_block - 1) / threads_per_block;
     fvc_div_cell_vector_internal<<<blocks_per_grid, threads_per_block, 0, stream>>>(num_surfaces, lowerAddr, upperAddr, vf, weight, Sf, output);
+
+    checkCudaErrors(cudaEventRecord(stop, 0));
+    checkCudaErrors(cudaEventSynchronize(start));
+    checkCudaErrors(cudaEventSynchronize(stop));
+    checkCudaErrors(cudaEventElapsedTime(&time_elapsed, start, stop));
+    printf("fvc_div_vector_new internal 执行时间：%f(ms)\n", time_elapsed);
+
+
+    checkCudaErrors(cudaEventRecord(start, 0));
 
     int offset = 0;
     for (int i = 0; i < num_patches; i++) {
@@ -873,10 +911,25 @@ void fvc_div_cell_vector(cudaStream_t stream, int num_cells, int num_surfaces,
         offset += patch_size[i];
     }
 
+    checkCudaErrors(cudaEventRecord(stop, 0));
+    checkCudaErrors(cudaEventSynchronize(start));
+    checkCudaErrors(cudaEventSynchronize(stop));
+    checkCudaErrors(cudaEventElapsedTime(&time_elapsed, start, stop));
+    printf("fvc_div_vector_new boundary 执行时间：%f(ms)\n", time_elapsed);
+
+
+    checkCudaErrors(cudaEventRecord(start, 0));
+
     // divide cell volume
     threads_per_block = 1024;
     blocks_per_grid = (num_cells + threads_per_block - 1) / threads_per_block;
     divide_cell_volume_scalar<<<blocks_per_grid, threads_per_block, 0, stream>>>(num_cells, volume, output);
+
+    checkCudaErrors(cudaEventRecord(stop, 0));
+    checkCudaErrors(cudaEventSynchronize(start));
+    checkCudaErrors(cudaEventSynchronize(stop));
+    checkCudaErrors(cudaEventElapsedTime(&time_elapsed, start, stop));
+    printf("fvc_div_vector_new divide_cell_scalar 执行时间：%f(ms)\n", time_elapsed);
 }
 
 void fvc_grad_cell_scalar(cudaStream_t stream, int num_cells, int num_surfaces, 

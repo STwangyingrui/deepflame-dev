@@ -508,7 +508,7 @@ void test_fvc_grad_vector(dfMatrixDataBase& dfDataBase, Foam::fvMesh& mesh, volV
     testGPUDataBase testData;
     buildTestGPUDataBase<volVectorField>(dfDataBase, testData, U, false, false, false, false, false, false, false, false, false, false);
 
-    fvc_grad_vector(dfDataBase.stream, dfDataBase.num_cells, dfDataBase.num_surfaces,
+    fvc_grad_vector(dfDataBase.stream, dfDataBase.num_cells, dfDataBase.num_surfaces, dfDataBase.num_boundary_surfaces,
             dfDataBase.d_owner, dfDataBase.d_neighbor, 
             dfDataBase.d_weight, dfDataBase.d_sf, dfDataBase.d_u, d_fvc_ouput_tensor,
             dfDataBase.num_patches, dfDataBase.patch_size.data(), testData.patch_type.data(), 
@@ -517,8 +517,16 @@ void test_fvc_grad_vector(dfMatrixDataBase& dfDataBase, Foam::fvMesh& mesh, volV
 
     // compare result
     bool printFlag = false;
-    std::vector<double> h_fvc_ouput_tensor(dfDataBase.num_cells * 9);
-    checkCudaErrors(cudaMemcpy(h_fvc_ouput_tensor.data(), d_fvc_ouput_tensor, dfDataBase.cell_value_tsr_bytes, cudaMemcpyDeviceToHost));
+    std::vector<double> h_fvc_ouput_tensor_init(dfDataBase.num_cells * 9), h_fvc_ouput_tensor(dfDataBase.num_cells * 9);
+    checkCudaErrors(cudaMemcpy(h_fvc_ouput_tensor_init.data(), d_fvc_ouput_tensor, dfDataBase.cell_value_tsr_bytes, cudaMemcpyDeviceToHost));
+
+    // convert tsr field for conparison
+    for (int i = 0; i < dfDataBase.num_cells; i++) {
+        for (int j = 0; j < 9; j++) {
+            h_fvc_ouput_tensor[i * 9 + j] = h_fvc_ouput_tensor_init[dfDataBase.num_cells * j + i];   
+        }
+    }
+
     checkVectorEqual(dfDataBase.num_cells * 9, &fvc_ouput_tensor[0][0], h_fvc_ouput_tensor.data(), 1e-14, printFlag);
 }
 

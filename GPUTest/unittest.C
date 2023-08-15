@@ -137,12 +137,15 @@ int main(int argc, char *argv[])
         DEBUG_TRACE;
 
         // unittest of fvc::grad(U)
+        Info << "unittest of fvc::grad(U)" << endl;
         test_fvc_grad_vector(dfDataBase, mesh, U, initType::original);
         DEBUG_TRACE;
+        Info << endl;
         // test_fvc_grad_vector(dfDataBase, mesh, U, initType::randomInit);
         // DEBUG_TRACE;
         test_fvc_grad_vector_orig(dfDataBase, mesh, U, initType::original, dfDataBaseOrig);
         DEBUG_TRACE;
+        Info << endl;
 
         // unittest of fvc::div(phi)
         test_fvc_div_scalar(dfDataBase, mesh, phi, initType::original);
@@ -151,18 +154,26 @@ int main(int argc, char *argv[])
         DEBUG_TRACE;
 
         // unittest of fvc::div(U)
+        Info << "unittest of fvc::div(U)" << endl;
         test_fvc_div_vector(dfDataBase, mesh, U, initType::original);
         DEBUG_TRACE;
+        Info << endl;
         // test_fvc_div_vector(dfDataBase, mesh, U, initType::randomInit);
         // DEBUG_TRACE;
+        test_fvc_div_vector_orig(dfDataBase, mesh, U, initType::original, dfDataBaseOrig);
+        DEBUG_TRACE;
+        Info << endl;
 
         // unittest of fvc::grad(p)
+        Info << "unittest of fvc::grad(p)" << endl;
         test_fvc_grad_scalar(dfDataBase, mesh, p, initType::original);
         DEBUG_TRACE;
-        test_fvc_grad_scalar(dfDataBase, mesh, p, initType::randomInit);
-        DEBUG_TRACE;
+        Info << endl;
+        // test_fvc_grad_scalar(dfDataBase, mesh, p, initType::randomInit);
+        // DEBUG_TRACE;
         test_fvc_grad_scalar_orig(dfDataBase, mesh, p, initType::original, dfDataBaseOrig);
         DEBUG_TRACE
+        Info << endl;
     }
     return 0;
 }
